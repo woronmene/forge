@@ -1,0 +1,46 @@
+@import "tailwindcss";
+@import "../theme/index.css";
+@import "./utilities.css";
+
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    font-weight: var(--text-body--font-weight);
+  }
+
+  h1 {
+    font-size: var(--text-h1-page-title);
+    line-height: var(--text-h1-page-title--line-height);
+    font-weight: var(--text-h1-page-title--font-weight);
+    color: var(--color-text-primary);
+  }
+
+  h2 {
+    font-size: var(--text-h2-section-title);
+    line-height: var(--text-h2-section-title--line-height);
+    font-weight: var(--text-h2-section-title--font-weight);
+    color: var(--color-text-primary);
+  }
+
+  h3 {
+    font-size: var(--text-h3-card-title);
+    line-height: var(--text-h3-card-title--line-height);
+    font-weight: var(--text-h3-card-title--font-weight);
+    color: var(--color-text-primary);
+  }
+}

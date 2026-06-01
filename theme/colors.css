@@ -1,0 +1,37 @@
+/**
+ * FORGE Design System v1.0 — Color tokens
+ * @see Design theme: Primary, Semantic, Neutrals
+ */
+
+@theme {
+  /* Primary */
+  --color-primary: #2f4bfa;
+  --color-primary-10: #e6ecff;
+
+  /* Semantic — Success */
+  --color-success-text: #287f6e;
+  --color-success-bg: #c6ede5;
+
+  /* Semantic — Error */
+  --color-error-text: #f91010;
+  --color-error-bg: #fed9d9;
+
+  /* Semantic — Warning */
+  --color-warning-text: #f09706;
+  --color-warning-bg: #fef3c7;
+
+  /* Semantic — Neutral */
+  --color-neutral-text: #737373;
+  --color-neutral-bg: #f5f5f5;
+
+  /* Neutrals */
+  --color-text-primary: #0a0a0a;
+  --color-text-secondary: #737373;
+  --color-border: #e5e5e5;
+  --color-surface: #f6f7fb;
+  --color-background: #ffffff;
+
+  /* Aliases for common Tailwind/shadcn patterns */
+  --color-foreground: var(--color-text-primary);
+  --color-muted-foreground: var(--color-text-secondary);
+}

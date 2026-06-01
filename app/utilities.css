@@ -1,0 +1,97 @@
+/**
+ * FORGE Design System v1.0 — Global utility classes
+ */
+
+/* ─── Typography (bundled size + line-height + weight) ─── */
+
+@utility text-h1-page-title {
+  font-size: var(--text-h1-page-title);
+  line-height: var(--text-h1-page-title--line-height);
+  font-weight: var(--text-h1-page-title--font-weight);
+}
+
+@utility text-h2-section-title {
+  font-size: var(--text-h2-section-title);
+  line-height: var(--text-h2-section-title--line-height);
+  font-weight: var(--text-h2-section-title--font-weight);
+}
+
+@utility text-h3-card-title {
+  font-size: var(--text-h3-card-title);
+  line-height: var(--text-h3-card-title--line-height);
+  font-weight: var(--text-h3-card-title--font-weight);
+}
+
+@utility text-body-large {
+  font-size: var(--text-body-large);
+  line-height: var(--text-body-large--line-height);
+  font-weight: var(--text-body-large--font-weight);
+}
+
+@utility text-body {
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: var(--text-body--font-weight);
+}
+
+@utility text-body-small {
+  font-size: var(--text-body-small);
+  line-height: var(--text-body-small--line-height);
+  font-weight: var(--text-body-small--font-weight);
+}
+
+@utility text-caption {
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-weight: var(--text-caption--font-weight);
+}
+
+/* ─── Semantic status badges ─── */
+
+@utility badge-success {
+  color: var(--color-success-text);
+  background-color: var(--color-success-bg);
+}
+
+@utility badge-error {
+  color: var(--color-error-text);
+  background-color: var(--color-error-bg);
+}
+
+@utility badge-warning {
+  color: var(--color-warning-text);
+  background-color: var(--color-warning-bg);
+}
+
+@utility badge-neutral {
+  color: var(--color-neutral-text);
+  background-color: var(--color-neutral-bg);
+}
+
+/* ─── Brand logo wordmark ─── */
+
+@utility logo-forge {
+  font-size: var(--text-h2-section-title);
+  line-height: var(--text-h2-section-title--line-height);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+@utility logo-forge-dot {
+  color: var(--color-primary);
+}
+
+/* ─── Surfaces & dividers ─── */
+
+@utility surface-default {
+  background-color: var(--color-surface);
+}
+
+@utility divider {
+  border-color: var(--color-border);
+}
+
+@utility border-default {
+  border-color: var(--color-border);
+}

@@ -1,0 +1,12 @@
+/**
+ * FORGE Design System v1.0 — SF Pro font family
+ *
+ * Place licensed SF Pro .woff2 files in public/fonts/ to enable self-hosted loading.
+ * On macOS/iOS, -apple-system renders as SF Pro when local files are unavailable.
+ */
+
+@theme {
+  --font-sans:
+    "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
