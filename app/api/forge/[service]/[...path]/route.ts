@@ -3,6 +3,15 @@ import { NextResponse } from "next/server";
 
 type ForgeProxyService = "api" | "media" | "analytics" | "user" | "wallet" | "java";
 
+const defaultServiceTargets: Record<ForgeProxyService, string> = {
+  api: "https://szpa00qtp4.execute-api.us-east-1.amazonaws.com",
+  media: "https://3bbei9jua5.execute-api.us-east-1.amazonaws.com",
+  analytics: "https://q588qlfwkj.execute-api.us-east-1.amazonaws.com",
+  user: "https://6z8ym795gc.execute-api.us-east-1.amazonaws.com",
+  wallet: "https://zzxxkqpbu6.execute-api.us-east-1.amazonaws.com",
+  java: "https://zzxxkqpbu6.execute-api.us-east-1.amazonaws.com",
+};
+
 const serviceEnvMap: Record<ForgeProxyService, string | undefined> = {
   api: process.env.NEXT_PUBLIC_FORGE_API_BASE_URL,
   media: process.env.NEXT_PUBLIC_FORGE_MEDIA_BASE_URL,
@@ -13,7 +22,8 @@ const serviceEnvMap: Record<ForgeProxyService, string | undefined> = {
 };
 
 function getServiceTarget(service: string) {
-  const target = serviceEnvMap[service as ForgeProxyService];
+  const normalizedService = service as ForgeProxyService;
+  const target = serviceEnvMap[normalizedService] ?? defaultServiceTargets[normalizedService];
   if (!target) {
     return null;
   }
