@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
+import { AuthGate } from "@/components/auth-gate";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
-  return children;
+  return <AuthGate>{children}</AuthGate>;
 }

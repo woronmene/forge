@@ -22,7 +22,7 @@ export type ContentAsset = {
   type: string;
   typeTone: "purple" | "cyan" | "blue" | "gray";
   genre: string;
-  status: "Ready" | "Error";
+  status: "Ready" | "Error" | "Processing" | "Queued" | "Draft" | "Published" | "Private";
   dateAdded: string;
   views: string;
   swatch: string;

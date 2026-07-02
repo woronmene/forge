@@ -1,0 +1,54 @@
+import { forgeMediaClient } from "@/services/api/client";
+import type { AssetKind } from "@/services/api/types";
+
+export type CreateUploadUrlInput = {
+  title: string;
+  fileName: string;
+  contentType: string;
+  size?: number;
+};
+
+export type UploadUrlResponse = {
+  uploadUrl: string;
+  assetId?: string;
+  key?: string;
+  fields?: Record<string, string>;
+};
+
+export type CompleteUploadInput = {
+  assetId?: string;
+  key?: string;
+  payload?: Record<string, unknown>;
+};
+
+const uploadUrlPaths: Record<AssetKind, string> = {
+  video: "/v1/media/video/upload-url",
+  audio: "/v1/media/audio/upload-url",
+  image: "/v1/media/image/upload-url",
+  subtitle: "/v1/media/subtitle/upload-url",
+};
+
+const completeUploadPaths: Record<AssetKind, string> = {
+  video: "/v1/media/video/complete-upload",
+  audio: "/v1/media/audio/complete-upload",
+  image: "/v1/media/image/complete-upload",
+  subtitle: "/v1/media/subtitle/complete-upload",
+};
+
+export async function createUploadUrl(kind: AssetKind, input: CreateUploadUrlInput) {
+  const response = await forgeMediaClient.post<UploadUrlResponse>(uploadUrlPaths[kind], {
+    title: input.title,
+    content_type: input.contentType,
+  });
+  return response.data;
+}
+
+export async function createBatchUploadUrls(payload: Record<string, unknown>) {
+  const response = await forgeMediaClient.post("/v1/media/batch/upload-urls", payload);
+  return response.data;
+}
+
+export async function completeUpload(kind: AssetKind, input: CompleteUploadInput) {
+  const response = await forgeMediaClient.post(completeUploadPaths[kind], input.payload ?? input);
+  return response.data;
+}

@@ -386,10 +386,17 @@ export function FileStatusRow({
   );
 }
 
-export function ExportButton({ children }: { children: React.ReactNode }) {
+export function ExportButton({
+  children,
+  onClick,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+}) {
   return (
     <button
       type="button"
+      onClick={onClick}
       className="inline-flex h-[44px] items-center gap-2 rounded-[12px] border border-[#E6E7EC] bg-white px-4 text-[13px] font-medium text-[#20232B]"
     >
       {children}
