@@ -3,8 +3,8 @@
 import { useMutation } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { ArrowRight, LoaderCircle } from "lucide-react";
+import { Suspense, type FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
 import { SurfaceCard, fieldSurfaceClassName } from "@/components/page-primitives";
 import { cn } from "@/lib/utils";
 import { bootstrapForgeSession, loginAdmin } from "@/services/auth";
@@ -29,7 +29,18 @@ function parseAuthError(error: unknown) {
   return "We could not sign you in with those credentials.";
 }
 
-export default function HomePage() {
+function BootstrappingScreen() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#EEF1FF_0%,_#FCFCFE_42%,_#F7F8FB_100%)] px-6">
+      <div className="flex items-center gap-3 rounded-full border border-[#E6E7EC] bg-white px-5 py-3 text-[14px] font-medium text-[#4D5058] shadow-[0_12px_36px_rgba(17,24,39,0.08)]">
+        <LoaderCircle className="h-4 w-4 animate-spin text-[#3150FF]" />
+        Restoring admin session
+      </div>
+    </div>
+  );
+}
+
+function HomePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [username, setUsername] = useState("");
@@ -88,14 +99,7 @@ export default function HomePage() {
   }
 
   if (isBootstrapping) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#EEF1FF_0%,_#FCFCFE_42%,_#F7F8FB_100%)] px-6">
-        <div className="flex items-center gap-3 rounded-full border border-[#E6E7EC] bg-white px-5 py-3 text-[14px] font-medium text-[#4D5058] shadow-[0_12px_36px_rgba(17,24,39,0.08)]">
-          <LoaderCircle className="h-4 w-4 animate-spin text-[#3150FF]" />
-          Restoring admin session
-        </div>
-      </div>
-    );
+    return <BootstrappingScreen />;
   }
 
   return (
@@ -182,5 +186,13 @@ export default function HomePage() {
         </SurfaceCard>
       </div>
     </main>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<BootstrappingScreen />}>
+      <HomePageContent />
+    </Suspense>
   );
 }
