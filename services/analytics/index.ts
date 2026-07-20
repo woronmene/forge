@@ -7,7 +7,7 @@ export async function getMediaOverview(params?: QueryParams) {
 }
 
 export async function getMediaOverviewCsv(params?: QueryParams) {
-  const response = await forgeAnalyticsClient.get("/v1/analytics/media/overview/export", {
+  const response = await forgeAnalyticsClient.get("/v1/analytics/media/overview/export.csv", {
     params,
     responseType: "blob",
   });
@@ -15,7 +15,7 @@ export async function getMediaOverviewCsv(params?: QueryParams) {
 }
 
 export async function getAssetDrilldown(assetId: string, params?: QueryParams) {
-  const response = await forgeAnalyticsClient.get(`/v1/analytics/media/assets/${assetId}/drilldown`, { params });
+  const response = await forgeAnalyticsClient.get(`/v1/analytics/media/assets/${assetId}`, { params });
   return response.data;
 }
 
@@ -25,7 +25,7 @@ export async function getUserEngagementOverview(params?: QueryParams) {
 }
 
 export async function getUserEngagementDetail(userId: string, params?: QueryParams) {
-  const response = await forgeAnalyticsClient.get(`/v1/analytics/users/${userId}/engagement-detail`, { params });
+  const response = await forgeAnalyticsClient.get(`/v1/analytics/users/${userId}/engagement`, { params });
   return response.data;
 }
 

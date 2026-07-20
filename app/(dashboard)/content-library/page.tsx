@@ -32,6 +32,8 @@ type ContentLibraryQueryData = {
   catalogSummary: unknown | null;
 };
 
+const uploadSuccessFlashKey = "forge_upload_success_flash";
+
 type ContentDrawerProps = {
   asset: ContentLibraryAsset;
   onClose: () => void;
@@ -466,8 +468,12 @@ function ContentDrawer({ asset, onClose }: ContentDrawerProps) {
         return null;
       }
 
-      const response = await getAsset(asset.apiKind, asset.id);
-      return mapAsset(response) ?? asset;
+      try {
+        const response = await getAsset(asset.apiKind, asset.id);
+        return mapAsset(response) ?? asset;
+      } catch {
+        return asset;
+      }
     },
     enabled: Boolean(asset.apiKind),
     initialData: asset,
@@ -501,12 +507,6 @@ function ContentDrawer({ asset, onClose }: ContentDrawerProps) {
       return updateAsset(resolvedAsset.apiKind, resolvedAsset.id, {
         title,
         description,
-        genre,
-        releaseDate,
-        cast,
-        subtitleFile,
-        subscriptionTier: tier,
-        visibility,
       });
     },
     onSuccess: async () => {
@@ -689,6 +689,7 @@ export default function ContentLibraryPage() {
   const [typeFilter, setTypeFilter] = useState("All types");
   const [statusFilter, setStatusFilter] = useState("All status");
   const [page, setPage] = useState(1);
+  const [flashToast, setFlashToast] = useState<string | null>(null);
   const pageSize = 10;
 
   const contentQuery = useQuery<ContentLibraryQueryData>({
@@ -741,8 +742,40 @@ export default function ContentLibraryPage() {
     }
   }, [assets, selectedAssetId]);
 
+  useEffect(() => {
+    const flashMessage = sessionStorage.getItem(uploadSuccessFlashKey);
+    if (!flashMessage) {
+      return;
+    }
+
+    sessionStorage.removeItem(uploadSuccessFlashKey);
+    setFlashToast(flashMessage);
+
+    const timeoutId = window.setTimeout(() => {
+      setFlashToast(null);
+    }, 3200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
   return (
     <DashboardShell title="Content library" description="Browse, search and manage all platform assets">
+      <AnimatePresence>
+        {flashToast ? (
+          <motion.div
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            className="fixed right-5 top-5 z-40 rounded-[18px] border border-[#CFE0FF] bg-white px-4 py-3 shadow-[0_16px_40px_rgba(17,24,39,0.12)]"
+          >
+            <div className="flex items-center gap-3">
+              <div className="h-2.5 w-2.5 rounded-full bg-[#12B76A]" />
+              <p className="text-[14px] font-medium text-[#16181D]">{flashToast}</p>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
       <div className="px-4 py-5 md:px-6 xl:px-8">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {summaryCards.map((item) => (

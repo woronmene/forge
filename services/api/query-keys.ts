@@ -39,6 +39,8 @@ export const forgeQueryKeys = {
   },
   wallet: {
     all: ["wallet"] as const,
+    overview: (params?: Record<string, unknown>) => ["wallet", "overview", params ?? {}] as const,
+    providers: () => ["wallet", "providers"] as const,
     health: () => ["wallet", "health"] as const,
     banks: () => ["wallet", "banks"] as const,
     kycLevels: () => ["wallet", "kyc-levels"] as const,

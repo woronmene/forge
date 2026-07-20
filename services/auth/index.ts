@@ -18,6 +18,24 @@ type RefreshAdminInput = {
   refreshToken: string;
 };
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableAuthError(error: unknown) {
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+
+  const status = error.response?.status;
+  if (status !== undefined) {
+    return status >= 500;
+  }
+
+  const code = typeof error.code === "string" ? error.code : "";
+  return ["ECONNRESET", "ETIMEDOUT", "UND_ERR_SOCKET", "ERR_NETWORK"].includes(code);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -89,11 +107,29 @@ export async function loginAdmin(input: LoginAdminInput) {
 }
 
 export async function refreshAdmin(input: RefreshAdminInput) {
-  const { data } = await forgeUserAuthClient.post("/internal/v1/admin/auth/refresh", {
-    refresh_token: input.refreshToken,
-  });
+  let attempt = 0;
+  let lastError: unknown;
 
-  return normalizeAuthSession(data);
+  while (attempt < 3) {
+    try {
+      const { data } = await forgeUserAuthClient.post("/internal/v1/admin/auth/refresh", {
+        refresh_token: input.refreshToken,
+      });
+
+      return normalizeAuthSession(data);
+    } catch (error) {
+      lastError = error;
+      attempt += 1;
+
+      if (!isRetryableAuthError(error) || attempt >= 3) {
+        throw error;
+      }
+
+      await delay(300 * attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Refresh failed.");
 }
 
 export async function bootstrapForgeSession(persistence?: ForgeSessionPersistence) {

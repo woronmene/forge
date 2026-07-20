@@ -29,10 +29,10 @@ const uploadUrlPaths: Record<AssetKind, string> = {
 };
 
 const completeUploadPaths: Record<AssetKind, string> = {
-  video: "/v1/media/video/complete-upload",
-  audio: "/v1/media/audio/complete-upload",
-  image: "/v1/media/image/complete-upload",
-  subtitle: "/v1/media/subtitle/complete-upload",
+  video: "/v1/media/assets",
+  audio: "/v1/media/assets",
+  image: "/v1/media/assets",
+  subtitle: "/v1/media/assets",
 };
 
 export async function createUploadUrl(kind: AssetKind, input: CreateUploadUrlInput) {
@@ -44,11 +44,19 @@ export async function createUploadUrl(kind: AssetKind, input: CreateUploadUrlInp
 }
 
 export async function createBatchUploadUrls(payload: Record<string, unknown>) {
-  const response = await forgeMediaClient.post("/v1/media/batch/upload-urls", payload);
+  const response = await forgeMediaClient.post("/v1/media/assets/upload-batch", payload);
   return response.data;
 }
 
 export async function completeUpload(kind: AssetKind, input: CompleteUploadInput) {
-  const response = await forgeMediaClient.post(completeUploadPaths[kind], input.payload ?? input);
+  const mediaId = input.assetId;
+  if (!mediaId) {
+    throw new Error("completeUpload requires an assetId.");
+  }
+
+  const response = await forgeMediaClient.post(
+    `${completeUploadPaths[kind]}/${mediaId}/complete-upload`,
+    input.payload ?? {},
+  );
   return response.data;
 }

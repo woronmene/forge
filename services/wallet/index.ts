@@ -1,6 +1,16 @@
 import { forgeApiClient, forgeJavaClient, forgeWalletClient } from "@/services/api/client";
 import type { QueryParams } from "@/services/api/types";
 
+export async function getAdminWalletOverview(params?: QueryParams & Record<string, unknown>) {
+  const response = await forgeApiClient.get("/v1/admin/wallet/overview", { params });
+  return response.data;
+}
+
+export async function getAdminWalletProviders() {
+  const response = await forgeApiClient.get("/v1/admin/wallet/providers");
+  return response.data;
+}
+
 export async function getWalletWrapperRoot() {
   const response = await forgeApiClient.get("/");
   return response.data;

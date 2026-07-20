@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { Download, LoaderCircle, Plus } from "lucide-react";
+import { Download, LoaderCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { FauxBars, MetricCard, SegmentTabs, SparkLine, ToolbarButton } from "@/components/dashboard-widgets";
@@ -22,18 +22,12 @@ type GeographyRow = {
   usersLabel: string;
   share: number;
   flag: string;
+  count: number;
 };
 
-type RegistrationRow = {
+type BreakdownRow = {
   label: string;
   value: string;
-};
-
-type RetentionRow = {
-  label: string;
-  value: string;
-  helper: string;
-  color: string;
 };
 
 type EngagementData = {
@@ -42,11 +36,20 @@ type EngagementData = {
   geography: GeographyRow[];
   registrations: {
     total: string;
-    delta: string;
-    rows: RegistrationRow[];
+    helper: string;
+    rows: BreakdownRow[];
   };
-  retention: RetentionRow[];
-  raw: unknown;
+  accountStatuses: BreakdownRow[];
+  freshness: string;
+  raw: {
+    windowDays: number;
+    dailyActiveUsers: number;
+    monthlyActiveUsers: number;
+    newRegistrations: number;
+    geography: GeographyRow[];
+    subscriptionTierBreakdown: Record<string, number>;
+    accountStatusBreakdown: Record<string, number>;
+  };
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -112,206 +115,257 @@ function parseError(error: unknown) {
   return "We could not load engagement metrics from the backend.";
 }
 
-function flattenMetrics(input: unknown, prefix = ""): Array<{ path: string; value: number }> {
-  if (Array.isArray(input)) {
-    return input.flatMap((item, index) => flattenMetrics(item, `${prefix}.${index}`));
-  }
-
-  if (!isRecord(input)) {
-    const numberValue = getNumber(input);
-    return numberValue === undefined ? [] : [{ path: prefix.toLowerCase(), value: numberValue }];
-  }
-
-  return Object.entries(input).flatMap(([key, value]) => flattenMetrics(value, `${prefix}.${key}`));
+function toSentenceCase(input: string) {
+  return input
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function findMetricValue(input: unknown, keywords: string[]) {
-  const metrics = flattenMetrics(input);
-  const match = metrics.find(({ path }) => keywords.every((keyword) => path.includes(keyword)));
-  return match?.value;
-}
-
-function collectObjects(input: unknown): Record<string, unknown>[] {
-  if (Array.isArray(input)) {
-    return input.flatMap((item) => collectObjects(item));
-  }
-
-  if (!isRecord(input)) {
-    return [];
-  }
-
-  return [input, ...Object.values(input).flatMap((value) => collectObjects(value))];
-}
-
-function getFlagEmoji(country: string) {
-  const normalized = country.trim().toLowerCase();
+function getFlagEmoji(countryCode: string) {
+  const normalized = countryCode.trim().toUpperCase();
   const map: Record<string, string> = {
-    nigeria: "🇳🇬",
-    ghana: "🇬🇭",
-    "united kingdom": "🇬🇧",
-    uk: "🇬🇧",
-    "united states": "🇺🇸",
-    usa: "🇺🇸",
-    canada: "🇨🇦",
-    kenya: "🇰🇪",
-    "south africa": "🇿🇦",
+    NG: "🇳🇬",
+    GH: "🇬🇭",
+    GB: "🇬🇧",
+    UK: "🇬🇧",
+    US: "🇺🇸",
+    CA: "🇨🇦",
+    KE: "🇰🇪",
+    ZA: "🇿🇦",
   };
 
   return map[normalized] ?? "🌍";
 }
 
-function buildSummaryCards(input: unknown): OverviewCard[] {
-  const dailyActive = findMetricValue(input, ["daily", "active"]) ?? findMetricValue(input, ["dau"]);
-  const monthlyActive = findMetricValue(input, ["monthly", "active"]) ?? findMetricValue(input, ["mau"]);
-  const registrations = findMetricValue(input, ["registration"]) ?? findMetricValue(input, ["signup"]);
-  const retention = findMetricValue(input, ["retention"]) ?? findMetricValue(input, ["d30"]);
+function countryCodeToName(countryCode: string) {
+  const normalized = countryCode.trim().toUpperCase();
+  const map: Record<string, string> = {
+    NG: "Nigeria",
+    GH: "Ghana",
+    GB: "United Kingdom",
+    UK: "United Kingdom",
+    US: "United States",
+    CA: "Canada",
+    KE: "Kenya",
+    ZA: "South Africa",
+  };
+
+  return map[normalized] ?? normalized;
+}
+
+function formatFreshness(value: unknown) {
+  if (typeof value !== "string" || !value) {
+    return "Latest backend snapshot";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Latest backend snapshot";
+  }
+
+  return `Last event ${new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed)}`;
+}
+
+function buildGeography(input: unknown) {
+  if (!isRecord(input) || !Array.isArray(input.active_user_geography)) {
+    return [{ country: "No geography data yet", usersLabel: "No active user geography returned", share: 0, flag: "🌍", count: 0 }];
+  }
+
+  const rows = input.active_user_geography
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((record) => {
+      const countryCode = getString(record.country_code) ?? "Unknown";
+      const count = getNumber(record.count) ?? 0;
+      return {
+        country: countryCodeToName(countryCode),
+        usersLabel: `${formatCount(count)} users`,
+        share: 0,
+        flag: getFlagEmoji(countryCode),
+        count,
+      };
+    })
+    .sort((left, right) => right.count - left.count);
+
+  const total = rows.reduce((sum, row) => sum + row.count, 0);
+  return rows.map((row) => ({
+    ...row,
+    share: total > 0 ? Math.max(1, Math.round((row.count / total) * 100)) : 0,
+  }));
+}
+
+function getBreakdown(input: unknown, key: "subscription_tier_breakdown" | "account_status_breakdown") {
+  if (!isRecord(input) || !isRecord(input[key])) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(input[key]).map(([entryKey, value]) => [entryKey, getNumber(value) ?? 0]),
+  );
+}
+
+function buildSummaryCards(input: unknown, windowDays: number): OverviewCard[] {
+  const dailyActive = isRecord(input) ? getNumber(input.daily_active_users) ?? 0 : 0;
+  const monthlyActive = isRecord(input) ? getNumber(input.monthly_active_users) ?? 0 : 0;
+  const registrations = isRecord(input) ? getNumber(input.new_registrations) ?? 0 : 0;
+  const geography = buildGeography(input).filter((item) => item.count > 0);
 
   return [
     {
       label: "Daily active users",
       value: formatCompact(dailyActive),
-      helper: dailyActive !== undefined ? "Live backend metric" : "Not exposed in sample response",
-      helperTone: dailyActive !== undefined ? "positive" : "neutral",
+      helper: `Latest day in ${windowDays}-day window`,
+      helperTone: "positive",
     },
     {
       label: "Monthly active users",
       value: formatCompact(monthlyActive),
-      helper: monthlyActive !== undefined ? "Live backend metric" : "Not exposed in sample response",
-      helperTone: monthlyActive !== undefined ? "positive" : "neutral",
+      helper: `${windowDays}-day active audience`,
+      helperTone: "positive",
     },
     {
       label: "Registrations",
       value: formatCompact(registrations),
-      helper: registrations !== undefined ? "New users in range" : "Derived from available fields",
-      helperTone: registrations !== undefined ? "positive" : "neutral",
+      helper: `${windowDays}-day total`,
+      helperTone: "positive",
     },
     {
-      label: "Retention",
-      value: retention !== undefined ? `${Math.round(retention)}%` : "—",
-      helper: retention !== undefined ? "Long-tail retention signal" : "Not exposed in current payload",
-      helperTone: retention !== undefined ? "positive" : "neutral",
+      label: "Countries",
+      value: formatCount(geography.length),
+      helper: geography.length > 0 ? "Active user geography" : "No geography returned",
+      helperTone: geography.length > 0 ? "positive" : "neutral",
     },
   ];
 }
 
-function pickChartValues(input: unknown) {
-  const values = flattenMetrics(input)
-    .map(({ value }) => value)
+function buildChartValues(input: unknown) {
+  const dailyActive = isRecord(input) ? getNumber(input.daily_active_users) ?? 0 : 0;
+  const monthlyActive = isRecord(input) ? getNumber(input.monthly_active_users) ?? 0 : 0;
+  const registrations = isRecord(input) ? getNumber(input.new_registrations) ?? 0 : 0;
+  const subscriptionBreakdown = getBreakdown(input, "subscription_tier_breakdown");
+  const breakdownValues = Object.values(subscriptionBreakdown)
     .filter((value) => value > 0)
-    .slice(0, 12);
+    .sort((left, right) => right - left)
+    .slice(0, 4);
 
-  if (values.length >= 6) {
-    const max = Math.max(...values);
-    return values.map((value) => Math.max(16, Math.round((value / max) * 100)));
+  const values = [dailyActive, monthlyActive, registrations, ...breakdownValues].filter((value) => value > 0);
+  if (values.length === 0) {
+    return [36, 52, 44, 68, 58, 72];
   }
 
-  return [44, 56, 43, 52, 84, 61, 68, 71, 69, 77, 59, 63];
+  const max = Math.max(...values);
+  return values.map((value) => Math.max(16, Math.round((value / max) * 100)));
 }
 
-function buildGeography(input: unknown): GeographyRow[] {
-  const rows = collectObjects(input)
-    .filter((record) => getString(record.country) || getString(record.country_name) || getString(record.location))
-    .map((record) => {
-      const country =
-        getString(record.country) ??
-        getString(record.country_name) ??
-        getString(record.location) ??
-        "Unknown";
-
-      const users =
-        getNumber(record.users) ??
-        getNumber(record.user_count) ??
-        getNumber(record.total_users) ??
-        getNumber(record.active_users);
-
-      const share =
-        getNumber(record.share) ??
-        getNumber(record.percentage) ??
-        getNumber(record.percent) ??
-        getNumber(record.user_share);
-
-      return {
-        country,
-        usersLabel: users !== undefined ? `${formatCount(users)} users` : "Users unavailable",
-        share: share !== undefined ? Math.max(1, Math.min(100, Math.round(share))) : 0,
-        flag: getFlagEmoji(country),
-      };
-    })
-    .filter((row) => row.country !== "Unknown")
-    .sort((left, right) => right.share - left.share);
-
-  if (rows.length > 0) {
-    return rows.slice(0, 5);
-  }
-
-  return [{ country: "No geography data yet", usersLabel: "Connect auth to load region metrics", share: 0, flag: "🌍" }];
-}
-
-function buildRegistrations(input: unknown) {
-  const total = findMetricValue(input, ["registration"]) ?? findMetricValue(input, ["signup"]);
-  const dailyAverage = findMetricValue(input, ["daily", "average"]) ?? findMetricValue(input, ["avg", "daily"]);
-  const peak = findMetricValue(input, ["peak"]);
-  const low = findMetricValue(input, ["low"]) ?? findMetricValue(input, ["minimum"]);
-  const delta = findMetricValue(input, ["growth"]) ?? findMetricValue(input, ["change"]) ?? findMetricValue(input, ["delta"]);
+function buildRegistrationRows(input: unknown, windowDays: number): { total: string; helper: string; rows: BreakdownRow[] } {
+  const total = isRecord(input) ? getNumber(input.new_registrations) ?? 0 : 0;
+  const subscriptionBreakdown = getBreakdown(input, "subscription_tier_breakdown");
+  const rows = Object.entries(subscriptionBreakdown)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 4)
+    .map(([label, value]) => ({
+      label: `${toSentenceCase(label)} users`,
+      value: formatCount(value),
+    }));
 
   return {
     total: formatCount(total),
-    delta: delta !== undefined ? `${delta > 0 ? "+" : ""}${Math.round(delta)}%` : "Live delta unavailable",
-    rows: [
-      { label: "Daily average", value: dailyAverage !== undefined ? `${formatCount(dailyAverage)} / day` : "—" },
-      { label: "Peak day this period", value: peak !== undefined ? `${formatCount(peak)} users` : "—" },
-      { label: "Lowest day this period", value: low !== undefined ? `${formatCount(low)} users` : "—" },
-    ],
+    helper: `Registrations captured in the last ${windowDays} days`,
+    rows: rows.length > 0 ? rows : [{ label: "Tier breakdown", value: "Not exposed" }],
   };
 }
 
-function buildRetention(input: unknown): RetentionRow[] {
-  const d1 = findMetricValue(input, ["d1"]) ?? findMetricValue(input, ["day1"]);
-  const d7 = findMetricValue(input, ["d7"]) ?? findMetricValue(input, ["day7"]);
-  const d30 = findMetricValue(input, ["d30"]) ?? findMetricValue(input, ["day30"]);
+function buildAccountStatusRows(input: unknown) {
+  const accountStatusBreakdown = getBreakdown(input, "account_status_breakdown");
+  const rows = Object.entries(accountStatusBreakdown)
+    .sort((left, right) => right[1] - left[1])
+    .map(([label, value]) => ({
+      label: toSentenceCase(label),
+      value: formatCount(value),
+    }));
 
-  return [
-    { label: "D1", value: d1 !== undefined ? `${Math.round(d1)}%` : "—", helper: "Next day", color: "#3150FF" },
-    { label: "D7", value: d7 !== undefined ? `${Math.round(d7)}%` : "—", helper: "After 7 days", color: "#228473" },
-    { label: "D30", value: d30 !== undefined ? `${Math.round(d30)}%` : "—", helper: "After 30 days", color: "#D97706" },
-  ];
+  return rows.length > 0 ? rows : [{ label: "Account status breakdown", value: "Not exposed" }];
 }
 
-function adaptEngagementData(payload: unknown): EngagementData {
+function adaptEngagementData(payload: unknown, windowDays: number): EngagementData {
+  const geography = buildGeography(payload);
   return {
-    summaryCards: buildSummaryCards(payload),
-    chartValues: pickChartValues(payload),
-    geography: buildGeography(payload),
-    registrations: buildRegistrations(payload),
-    retention: buildRetention(payload),
-    raw: payload,
+    summaryCards: buildSummaryCards(payload, windowDays),
+    chartValues: buildChartValues(payload),
+    geography,
+    registrations: buildRegistrationRows(payload, windowDays),
+    accountStatuses: buildAccountStatusRows(payload),
+    freshness: formatFreshness(isRecord(payload) ? payload.freshness : undefined),
+    raw: {
+      windowDays,
+      dailyActiveUsers: isRecord(payload) ? getNumber(payload.daily_active_users) ?? 0 : 0,
+      monthlyActiveUsers: isRecord(payload) ? getNumber(payload.monthly_active_users) ?? 0 : 0,
+      newRegistrations: isRecord(payload) ? getNumber(payload.new_registrations) ?? 0 : 0,
+      geography,
+      subscriptionTierBreakdown: getBreakdown(payload, "subscription_tier_breakdown"),
+      accountStatusBreakdown: getBreakdown(payload, "account_status_breakdown"),
+    },
   };
+}
+
+function downloadBlob(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(href);
+}
+
+function buildCsv(data: EngagementData) {
+  const lines = [
+    ["metric", "value"],
+    ["daily_active_users", String(data.raw.dailyActiveUsers)],
+    ["monthly_active_users", String(data.raw.monthlyActiveUsers)],
+    ["new_registrations", String(data.raw.newRegistrations)],
+    [""],
+    ["country", "active_users", "share_percent"],
+    ...data.raw.geography.map((row) => [row.country, String(row.count), String(row.share)]),
+    [""],
+    ["subscription_tier", "count"],
+    ...Object.entries(data.raw.subscriptionTierBreakdown).map(([tier, count]) => [tier, String(count)]),
+    [""],
+    ["account_status", "count"],
+    ...Object.entries(data.raw.accountStatusBreakdown).map(([status, count]) => [status, String(count)]),
+  ];
+
+  return lines
+    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
 }
 
 export default function EngagementPage() {
   const [range, setRange] = useState("30 days");
 
   const params = useMemo(() => {
-    if (range === "7 days") {
-      return { range: "7d" };
-    }
-
-    if (range === "90 days") {
-      return { range: "90d" };
-    }
-
-    return { range: "30d" };
+    const windowDays = range === "7 days" ? 7 : range === "90 days" ? 90 : 30;
+    return { window_days: windowDays };
   }, [range]);
 
   const overviewQuery = useQuery({
     queryKey: forgeQueryKeys.analytics.userEngagementOverview(params),
-    queryFn: async () => adaptEngagementData(await getUserEngagementOverview(params)),
+    queryFn: async () => adaptEngagementData(await getUserEngagementOverview(params), params.window_days),
   });
 
   const exportMutation = useMutation({
     mutationFn: async () => {
-      const response = await getUserEngagementOverview({ ...params, export: "csv" });
-      return response;
+      const liveData = overviewQuery.data ?? adaptEngagementData(await getUserEngagementOverview(params), params.window_days);
+      const csv = buildCsv(liveData);
+      downloadBlob(`forge-user-engagement-${params.window_days}d.csv`, csv, "text/csv;charset=utf-8");
+      return true;
     },
   });
 
@@ -321,15 +375,11 @@ export default function EngagementPage() {
   const unauthorized = errorMessage?.toLowerCase().includes("401") || errorMessage?.toLowerCase().includes("unauthorized");
 
   return (
-    <DashboardShell title="Engagement overview" description="Platform-level user activity, retention and geographic distribution">
+    <DashboardShell title="Engagement overview" description="Platform-level user activity, registrations, and geographic distribution">
       <div className="space-y-5 px-4 py-5 md:px-6 xl:px-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <SegmentTabs items={["7 days", "30 days", "90 days"]} active={range} onChange={setRange} />
           <div className="flex flex-wrap items-center gap-3">
-            <ToolbarButton>
-              <Plus className="h-4 w-4" />
-              Add filter
-            </ToolbarButton>
             <ToolbarButton onClick={() => exportMutation.mutate()}>
               {exportMutation.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Export snapshot
@@ -349,7 +399,7 @@ export default function EngagementPage() {
         {exportError ? (
           <SurfaceCard className="border-[#F7C9D1] bg-[#FFF7F8]">
             <div className="p-4 text-[14px] text-[#7A2230]">
-              <p className="font-semibold">Export is not ready from the backend yet</p>
+              <p className="font-semibold">Export failed</p>
               <p className="mt-1">{exportError}</p>
             </div>
           </SurfaceCard>
@@ -374,12 +424,14 @@ export default function EngagementPage() {
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_470px]">
           <SurfaceCard>
             <div className="p-5">
-              <h2 className="text-[24px] font-semibold tracking-[-0.05em] text-[#16181D]">Daily &amp; Monthly Active Users</h2>
-              <p className="mt-2 text-[15px] text-[#7A7F89]">Backend overview for {range.toLowerCase()}</p>
+              <h2 className="text-[24px] font-semibold tracking-[-0.05em] text-[#16181D]">User activity snapshot</h2>
+              <p className="mt-2 text-[15px] text-[#7A7F89]">
+                Using the real {params.window_days}-day engagement overview payload. {data?.freshness ?? "Latest backend snapshot"}
+              </p>
               <div className="mt-6">
                 <FauxBars
-                  values={data?.chartValues ?? [42, 56, 43, 52, 84, 61, 68, 71, 69, 77, 59, 63]}
-                  highlightIndex={4}
+                  values={data?.chartValues ?? [36, 52, 44, 68, 58, 72]}
+                  highlightIndex={1}
                   max={100}
                   yLabels={["0", "25%", "50%", "75%"]}
                 />
@@ -404,9 +456,9 @@ export default function EngagementPage() {
                   </div>
                 ))}
               </div>
-              <button type="button" className="mt-6 flex h-[58px] w-full items-center justify-center rounded-[999px] border border-[#E6E7EC] text-[15px] font-medium text-[#16181D]">
-                Geography endpoint has no full-country pagination yet
-              </button>
+              <div className="mt-6 flex h-[58px] w-full items-center justify-center rounded-[999px] border border-[#E6E7EC] text-[15px] font-medium text-[#16181D]">
+                Top active-user countries from the current window
+              </div>
             </div>
           </SurfaceCard>
         </div>
@@ -415,12 +467,12 @@ export default function EngagementPage() {
           <SurfaceCard>
             <div className="p-5">
               <p className="text-[16px] font-semibold text-[#16181D]">New registrations</p>
-              <p className="mt-4 text-[15px] text-[#7A7F89]">Derived from the live engagement overview payload</p>
+              <p className="mt-4 text-[15px] text-[#7A7F89]">{data?.registrations.helper ?? "Live engagement overview payload"}</p>
               <div className="mt-6 flex items-end gap-3">
                 <span className="text-[52px] font-semibold tracking-[-0.06em] text-[#16181D]">{data?.registrations.total ?? "—"}</span>
                 <div className="pb-2 text-[14px] text-[#228473]">
-                  {data?.registrations.delta ?? "Live delta unavailable"}
-                  <div className="text-[#7A7F89]">vs previous available period</div>
+                  {params.window_days}-day total
+                  <div className="text-[#7A7F89]">from the analytics service</div>
                 </div>
               </div>
               <div className="mt-8 space-y-6">
@@ -436,23 +488,18 @@ export default function EngagementPage() {
 
           <SurfaceCard>
             <div className="p-5">
-              <p className="text-[16px] font-semibold text-[#16181D]">Retention snapshot</p>
-              <p className="mt-4 text-[15px] text-[#7A7F89]">Only the retention fields exposed by the analytics service are rendered here</p>
-              <div className="mt-8 grid gap-4 md:grid-cols-3">
-                {(data?.retention ?? []).map((item) => (
-                  <div key={item.label} className="rounded-[18px] border border-[#E6E7EC] p-4 text-center">
-                    <p className="text-[16px] font-semibold text-[#666D77]">{item.label}</p>
-                    <div className="mt-4 flex items-center justify-center gap-2">
-                      <span className="text-[30px] font-semibold" style={{ color: item.color }}>
-                        {item.value}
-                      </span>
-                    </div>
-                    <p className="mt-3 text-[14px] text-[#6E7380]">{item.helper}</p>
+              <p className="text-[16px] font-semibold text-[#16181D]">Account status breakdown</p>
+              <p className="mt-4 text-[15px] text-[#7A7F89]">Rendered from the backend account status counters for the current engagement window</p>
+              <div className="mt-8 space-y-4">
+                {(data?.accountStatuses ?? []).map((item) => (
+                  <div key={item.label} className="flex items-center justify-between rounded-[18px] border border-[#E6E7EC] px-4 py-4">
+                    <p className="text-[15px] text-[#666D77]">{item.label}</p>
+                    <p className="text-[20px] font-semibold text-[#16181D]">{item.value}</p>
                   </div>
                 ))}
               </div>
               <p className="mt-6 text-[15px] leading-8 text-[#6E7380]">
-                The current frontend only renders summary retention milestones. Cohort tables and deeper user funnels are still blocked by missing dedicated backend endpoints.
+                The current backend does not expose cohort retention tables or daily user series yet, so this page now focuses on the live engagement snapshot fields that are actually available.
               </p>
             </div>
           </SurfaceCard>

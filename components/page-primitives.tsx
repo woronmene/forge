@@ -71,7 +71,7 @@ export function TextField({
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
-  type?: "text" | "url" | "number";
+  type?: "text" | "url" | "number" | "date";
 }) {
   return (
     <input
@@ -113,18 +113,30 @@ export function SelectField({
   value,
   onChange,
   options,
+  placeholder,
 }: {
   className?: string;
   value: string;
   onChange: (value: string) => void;
   options: readonly string[] | string[];
+  placeholder?: string;
 }) {
   return (
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className={cn(fieldSurfaceClassName, "min-h-[52px] appearance-none pr-10", className)}
+      className={cn(
+        fieldSurfaceClassName,
+        "min-h-[52px] appearance-none pr-10",
+        value ? "text-[#16181D]" : "text-[#A1A1AA]",
+        className,
+      )}
     >
+      {placeholder ? (
+        <option value="" disabled>
+          {placeholder}
+        </option>
+      ) : null}
       {options.map((option) => (
         <option key={option} value={option}>
           {option}

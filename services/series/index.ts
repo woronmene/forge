@@ -15,8 +15,8 @@ export async function updateSeries(seriesId: string, payload: Record<string, unk
   return response.data;
 }
 
-export async function createSeason(payload: Record<string, unknown>) {
-  const response = await forgeMediaClient.post("/v1/media/seasons", payload);
+export async function createSeason(seriesId: string, payload: Record<string, unknown>) {
+  const response = await forgeMediaClient.post(`/v1/media/series/${seriesId}/seasons`, payload);
   return response.data;
 }
 
@@ -25,8 +25,8 @@ export async function updateSeason(seasonId: string, payload: Record<string, unk
   return response.data;
 }
 
-export async function createEpisode(payload: Record<string, unknown>) {
-  const response = await forgeMediaClient.post("/v1/media/episodes", payload);
+export async function createEpisode(seasonId: string, payload: Record<string, unknown>) {
+  const response = await forgeMediaClient.post(`/v1/media/seasons/${seasonId}/episodes`, payload);
   return response.data;
 }
 

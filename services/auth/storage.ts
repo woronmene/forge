@@ -1,5 +1,3 @@
-"use client";
-
 export type ForgeSessionPersistence = "local" | "session";
 
 export const FORGE_ACCESS_TOKEN_KEY = "forge_access_token";

@@ -8,8 +8,7 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { ExportButton, MetricCard, ProviderStatus, SegmentTabs, SparkLine, ToolbarSelect, ToolbarSearchField } from "@/components/dashboard-widgets";
 import { StatusBadge, SurfaceCard } from "@/components/page-primitives";
 import { forgeQueryKeys } from "@/services/api/query-keys";
-import { getWalletOverview } from "@/services/analytics";
-import { exportTransactionHistory } from "@/services/wallet";
+import { getAdminWalletOverview, getAdminWalletProviders } from "@/services/wallet";
 
 type SummaryCard = {
   label: string;
@@ -41,6 +40,7 @@ type TransactionRow = {
 };
 
 type WalletData = {
+  currency: string;
   summaryCards: SummaryCard[];
   breakdownRows: BreakdownRow[];
   geographyRows: GeographyRow[];
@@ -83,7 +83,7 @@ function formatCompact(value: unknown) {
   }).format(numberValue);
 }
 
-function formatCurrency(value: unknown) {
+function formatCurrency(value: unknown, currency = "NGN") {
   const numberValue = getNumber(value);
   if (numberValue === undefined) {
     return "—";
@@ -91,7 +91,7 @@ function formatCurrency(value: unknown) {
 
   return new Intl.NumberFormat("en-NG", {
     style: "currency",
-    currency: "NGN",
+    currency,
     maximumFractionDigits: 0,
   }).format(numberValue);
 }
@@ -135,170 +135,12 @@ function parseError(error: unknown) {
   return "We could not load wallet data from the backend.";
 }
 
-function flattenMetrics(input: unknown, prefix = ""): Array<{ path: string; value: number }> {
-  if (Array.isArray(input)) {
-    return input.flatMap((item, index) => flattenMetrics(item, `${prefix}.${index}`));
-  }
-
-  if (!isRecord(input)) {
-    const numberValue = getNumber(input);
-    return numberValue === undefined ? [] : [{ path: prefix.toLowerCase(), value: numberValue }];
-  }
-
-  return Object.entries(input).flatMap(([key, value]) => flattenMetrics(value, `${prefix}.${key}`));
-}
-
-function findMetricValue(input: unknown, keywords: string[]) {
-  const metrics = flattenMetrics(input);
-  const match = metrics.find(({ path }) => keywords.every((keyword) => path.includes(keyword)));
-  return match?.value;
-}
-
-function collectObjects(input: unknown): Record<string, unknown>[] {
-  if (Array.isArray(input)) {
-    return input.flatMap((item) => collectObjects(item));
-  }
-
-  if (!isRecord(input)) {
-    return [];
-  }
-
-  return [input, ...Object.values(input).flatMap((value) => collectObjects(value))];
-}
-
 function toSentenceCase(input: string) {
   return input
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function getList(payload: unknown): unknown[] {
-  if (Array.isArray(payload)) {
-    return payload;
-  }
-
-  if (!isRecord(payload)) {
-    return [];
-  }
-
-  const candidates = [
-    payload.items,
-    payload.transactions,
-    payload.results,
-    payload.records,
-    isRecord(payload.data) ? payload.data.items : undefined,
-    isRecord(payload.data) ? payload.data.transactions : undefined,
-  ];
-
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      return candidate;
-    }
-  }
-
-  return [];
-}
-
-function buildSummaryCards(input: unknown): SummaryCard[] {
-  const totalVolume = findMetricValue(input, ["volume"]) ?? findMetricValue(input, ["total", "amount"]);
-  const transactionCount = findMetricValue(input, ["transaction", "count"]) ?? findMetricValue(input, ["count"]);
-  const activeWallets = findMetricValue(input, ["active", "wallet"]);
-  const failureRate = findMetricValue(input, ["failure", "rate"]);
-
-  return [
-    {
-      label: "Total volume",
-      value: formatCurrency(totalVolume),
-      helper: totalVolume !== undefined ? "Wallet overview endpoint" : "Waiting on live payload shape",
-      tone: "positive",
-    },
-    {
-      label: "Transactions",
-      value: formatCompact(transactionCount),
-      helper: transactionCount !== undefined ? "Transaction activity" : "Waiting on live payload shape",
-      tone: "positive",
-    },
-    {
-      label: "Active wallets",
-      value: formatCompact(activeWallets),
-      helper: activeWallets !== undefined ? "Active user wallets" : "Not exposed yet",
-      tone: activeWallets !== undefined ? "positive" : "neutral",
-    },
-    {
-      label: "Failure rate",
-      value: failureRate !== undefined ? `${Math.round(failureRate)}%` : "—",
-      helper: failureRate !== undefined ? "Operational health" : "Not exposed yet",
-      tone: failureRate !== undefined && failureRate > 5 ? "negative" : "neutral",
-    },
-  ];
-}
-
-function buildBreakdownRows(input: unknown) {
-  return [
-    { label: "Bill pay volume", value: formatCurrency(findMetricValue(input, ["bill", "volume"])) },
-    { label: "Remittance volume", value: formatCurrency(findMetricValue(input, ["remittance", "volume"])) },
-    { label: "Bill pay count", value: formatCompact(findMetricValue(input, ["bill", "count"])) },
-    { label: "Remittance count", value: formatCompact(findMetricValue(input, ["remittance", "count"])) },
-    { label: "Average bill size", value: formatCurrency(findMetricValue(input, ["bill", "average"])) },
-    { label: "Average remittance size", value: formatCurrency(findMetricValue(input, ["remittance", "average"])) },
-  ];
-}
-
-function buildGeographyRows(input: unknown): GeographyRow[] {
-  const rows = collectObjects(input)
-    .filter((record) => getString(record.state) || getString(record.region) || getString(record.country))
-    .map((record) => {
-      const label =
-        getString(record.state) ??
-        getString(record.region) ??
-        getString(record.country) ??
-        "Unknown";
-
-      const volume =
-        getNumber(record.volume) ??
-        getNumber(record.total_volume) ??
-        getNumber(record.amount);
-
-      const share =
-        getNumber(record.share) ??
-        getNumber(record.percentage) ??
-        getNumber(record.percent);
-
-      return {
-        label,
-        volume: formatCurrency(volume),
-        share: share !== undefined ? Math.max(1, Math.min(100, Math.round(share))) : 0,
-      };
-    })
-    .filter((row) => row.label !== "Unknown")
-    .sort((left, right) => right.share - left.share);
-
-  if (rows.length > 0) {
-    return rows.slice(0, 5);
-  }
-
-  return [{ label: "Geography not exposed yet", volume: "—", share: 0 }];
-}
-
-function buildSenderRecipientRows(input: unknown) {
-  return [
-    { label: "Domestic sender volume", value: formatCurrency(findMetricValue(input, ["domestic"])) },
-    { label: "Inbound remittance volume", value: formatCurrency(findMetricValue(input, ["inbound"])) },
-    { label: "Recipient volume", value: formatCurrency(findMetricValue(input, ["recipient"])) },
-  ];
-}
-
-function buildProviderRows(input: unknown) {
-  const health = findMetricValue(input, ["failure", "rate"]);
-  const status: "Healthy" | "Down" = health !== undefined && health > 5 ? "Down" : "Healthy";
-
-  return [
-    { label: "Wallet analytics service", subtitle: "Derived from overview metrics availability", status },
-    { label: "Transaction history service", subtitle: "Backed by wallet transaction history endpoint", status: "Healthy" as const },
-    { label: "Provider health detail", subtitle: "Dedicated provider health endpoint not confirmed in the collection", status: "Down" as const },
-  ];
 }
 
 function mapTypeTone(type: string): "purple" | "blue" | "cyan" {
@@ -312,37 +154,216 @@ function mapTypeTone(type: string): "purple" | "blue" | "cyan" {
   return "blue";
 }
 
-function buildTransactionRows(payload: unknown): TransactionRow[] {
-  return getList(payload)
-    .filter((row) => isRecord(row))
-    .map((row, index) => {
-      const record = row as Record<string, unknown>;
-      const type = getString(record.type) ?? getString(record.transaction_type) ?? "Transaction";
+function buildCsv(rows: TransactionRow[]) {
+  const lines = [
+    ["user_id", "type", "amount", "date", "status", "reference"],
+    ...rows.map((row) => [row.user, row.type, row.amount, row.date, row.status, row.reference]),
+  ];
+
+  return lines
+    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+}
+
+function downloadBlob(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(href);
+}
+
+function getMap(input: unknown) {
+  if (!isRecord(input)) {
+    return {};
+  }
+
+  return Object.fromEntries(Object.entries(input).map(([key, value]) => [key, getNumber(value) ?? 0]));
+}
+
+function buildSummaryCards(payment: Record<string, unknown>, currency: string): SummaryCard[] {
+  const transactionCount = getNumber(payment.transaction_count) ?? 0;
+  const failureRate = getNumber(payment.failure_rate) ?? 0;
+
+  return [
+    {
+      label: "Total volume",
+      value: formatCurrency(payment.total_transaction_volume, currency),
+      helper: "Admin wallet overview",
+      tone: "positive",
+    },
+    {
+      label: "Transactions",
+      value: formatCompact(transactionCount),
+      helper: "Normalized payment activity",
+      tone: "positive",
+    },
+    {
+      label: "Average size",
+      value: formatCurrency(payment.average_transaction_size, currency),
+      helper: "Per transaction",
+      tone: "neutral",
+    },
+    {
+      label: "Failure rate",
+      value: `${Math.round(failureRate * 100)}%`,
+      helper: "Operational health",
+      tone: failureRate > 0.05 ? "negative" : "neutral",
+    },
+  ];
+}
+
+function buildBreakdownRows(payment: Record<string, unknown>, currency: string) {
+  const categoryCounts = getMap(payment.category_counts);
+  const statusCounts = getMap(payment.status_counts);
+
+  return [
+    { label: "Wallets created", value: formatCompact(payment.wallet_created_count) },
+    { label: "Wallet creation failures", value: formatCompact(payment.wallet_creation_failed_count) },
+    { label: "Provider sync runs", value: formatCompact(payment.provider_sync_count) },
+    { label: "Webhook events", value: formatCompact(payment.webhook_event_count) },
+    { label: "Synced wallets", value: formatCompact(payment.synced_wallet_count) },
+    { label: "Synced cards", value: formatCompact(payment.synced_card_count) },
+    { label: "Synced transactions", value: formatCompact(payment.synced_transaction_count) },
+    { label: "Top category count", value: formatCompact(Math.max(0, ...Object.values(categoryCounts))) },
+    { label: "Success count", value: formatCompact(statusCounts.success ?? statusCounts.Success ?? 0) },
+    { label: "Failure count", value: formatCompact(payment.failure_count) },
+    { label: "Currency", value: currency },
+    { label: "Transaction volume", value: formatCurrency(payment.total_transaction_volume, currency) },
+  ];
+}
+
+function buildGeographyRows(payment: Record<string, unknown>, currency: string) {
+  const source = Array.isArray(payment.sender_geography) && payment.sender_geography.length > 0
+    ? payment.sender_geography
+    : Array.isArray(payment.recipient_geography)
+      ? payment.recipient_geography
+      : [];
+
+  const rows = source
+    .filter((row): row is Record<string, unknown> => isRecord(row))
+    .map((row) => ({
+      label: getString(row.country_code) ?? "Unknown",
+      rawAmount: getNumber(row.amount) ?? 0,
+      volume: formatCurrency(row.amount, currency),
+      share: 0,
+    }))
+    .filter((row) => row.label !== "Unknown")
+    .sort((left, right) => right.rawAmount - left.rawAmount);
+
+  const total = rows.reduce((sum, row) => sum + row.rawAmount, 0);
+  if (rows.length === 0) {
+    return [{ label: "Geography not exposed yet", volume: "—", share: 0 }];
+  }
+
+  return rows.slice(0, 5).map((row) => ({
+    label: row.label,
+    volume: row.volume,
+    share: total > 0 ? Math.max(1, Math.round((row.rawAmount / total) * 100)) : 0,
+  }));
+}
+
+function buildSenderRecipientRows(payment: Record<string, unknown>, currency: string) {
+  const senderGeo = Array.isArray(payment.sender_geography) ? payment.sender_geography : [];
+  const recipientGeo = Array.isArray(payment.recipient_geography) ? payment.recipient_geography : [];
+
+  const senderAmount = senderGeo.reduce((sum, row) => sum + (isRecord(row) ? getNumber(row.amount) ?? 0 : 0), 0);
+  const recipientAmount = recipientGeo.reduce((sum, row) => sum + (isRecord(row) ? getNumber(row.amount) ?? 0 : 0), 0);
+  const providerCounts = getMap(payment.provider_counts);
+
+  return [
+    { label: "Sender volume", value: formatCurrency(senderAmount, currency) },
+    { label: "Recipient volume", value: formatCurrency(recipientAmount, currency) },
+    { label: "Providers tracked", value: formatCompact(Object.keys(providerCounts).length) },
+  ];
+}
+
+function buildProviderRows(payment: Record<string, unknown>, providersPayload: unknown) {
+  const providerCounts = getMap(payment.provider_counts);
+  const providerNames = Array.isArray((providersPayload as Record<string, unknown> | null)?.providers)
+    ? ((providersPayload as Record<string, unknown>).providers as unknown[])
+        .map((item) => (typeof item === "string" ? item : isRecord(item) ? getString(item.provider) ?? getString(item.name) : undefined))
+        .filter((item): item is string => Boolean(item))
+    : [];
+
+  const rows = providerNames.map((provider) => ({
+    label: provider,
+    subtitle: `${formatCompact(providerCounts[provider] ?? 0)} events seen in current overview`,
+    status: "Healthy" as const,
+  }));
+
+  if (rows.length > 0) {
+    return rows;
+  }
+
+  return [
+    {
+      label: "Provider list unavailable",
+      subtitle: "The admin wallet providers endpoint returned no provider names.",
+      status: "Down" as const,
+    },
+  ];
+}
+
+function buildTransactionRows(payment: Record<string, unknown>, currency: string): TransactionRow[] {
+  const rows = Array.isArray(payment.recent_transactions) ? payment.recent_transactions : [];
+  return rows
+    .filter((row): row is Record<string, unknown> => isRecord(row))
+    .map((record, index) => {
+      const type = getString(record.category) ?? getString(record.type) ?? getString(record.transaction_type) ?? "Transaction";
       const user = getString(record.user_id) ?? getString(record.userId) ?? getString(record.user) ?? "Unknown user";
-      const reference = getString(record.reference) ?? getString(record.tx_ref) ?? getString(record.id) ?? `tx-${index + 1}`;
-      const status = getString(record.status) ?? "Unknown";
+      const reference =
+        getString(record.transaction_reference) ??
+        getString(record.reference) ??
+        getString(record.tx_ref) ??
+        getString(record.transaction_id) ??
+        `tx-${index + 1}`;
+      const status = toSentenceCase(getString(record.status) ?? "Unknown");
 
       return {
         id: `${reference}-${index}`,
         user,
         type: toSentenceCase(type),
-        amount: formatCurrency(record.amount ?? record.total_amount ?? record.value),
-        date: formatDate(record.created_at ?? record.createdAt ?? record.updated_at ?? record.transaction_date),
-        status: toSentenceCase(status),
+        amount: formatCurrency(record.amount ?? record.total_amount ?? record.value, currency),
+        date: formatDate(record.created_at ?? record.createdAt ?? record.updated_at ?? record.transaction_date ?? record.captured_at),
+        status,
         reference,
         tone: mapTypeTone(type),
       };
     });
 }
 
-function adaptWalletData(overview: unknown, transactions: unknown): WalletData {
+function adaptWalletData(overview: unknown, providersPayload: unknown): WalletData | null {
+  if (!isRecord(overview) || !isRecord(overview.payment)) {
+    return null;
+  }
+
+  const payment = overview.payment;
+  const currency = getString(payment.currency) ?? "NGN";
+
   return {
-    summaryCards: buildSummaryCards(overview),
-    breakdownRows: buildBreakdownRows(overview),
-    geographyRows: buildGeographyRows(overview),
-    senderRecipientRows: buildSenderRecipientRows(overview),
-    providerRows: buildProviderRows(overview),
-    transactionRows: buildTransactionRows(transactions),
+    currency,
+    summaryCards: buildSummaryCards(payment, currency),
+    breakdownRows: buildBreakdownRows(payment, currency),
+    geographyRows: buildGeographyRows(payment, currency),
+    senderRecipientRows: buildSenderRecipientRows(payment, currency),
+    providerRows: buildProviderRows(payment, providersPayload),
+    transactionRows: buildTransactionRows(payment, currency),
+  };
+}
+
+function getDateWindow(period: string) {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(end.getDate() - (period === "Daily" ? 1 : 30));
+
+  const asDate = (value: Date) => value.toISOString().slice(0, 10);
+  return {
+    from_date: asDate(start),
+    to_date: asDate(end),
+    recent_limit: 50,
   };
 }
 
@@ -351,33 +372,20 @@ export default function WalletPage() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("Type");
   const [statusFilter, setStatusFilter] = useState("Status");
-  const transactionHistorySupported = false;
 
-  const overviewParams = useMemo(() => ({ range: period.toLowerCase() }), [period]);
-  const transactionPayload = useMemo(() => ({ period: period.toLowerCase() }), [period]);
+  const overviewParams = useMemo(() => getDateWindow(period), [period]);
 
   const overviewQuery = useQuery({
-    queryKey: forgeQueryKeys.analytics.walletOverview(overviewParams),
-    queryFn: () => getWalletOverview(overviewParams),
+    queryKey: forgeQueryKeys.wallet.overview(overviewParams),
+    queryFn: () => getAdminWalletOverview(overviewParams),
   });
 
-  const transactionsQuery = useQuery({
-    queryKey: forgeQueryKeys.wallet.transactionHistory(transactionPayload),
-    queryFn: async () => null,
-    enabled: transactionHistorySupported,
+  const providersQuery = useQuery({
+    queryKey: forgeQueryKeys.wallet.providers(),
+    queryFn: () => getAdminWalletProviders(),
   });
 
-  const exportMutation = useMutation({
-    mutationFn: () => exportTransactionHistory(transactionPayload),
-  });
-
-  const data = useMemo(() => {
-    if (!overviewQuery.data && !transactionsQuery.data) {
-      return null;
-    }
-
-    return adaptWalletData(overviewQuery.data, transactionsQuery.data);
-  }, [overviewQuery.data, transactionsQuery.data]);
+  const data = useMemo(() => adaptWalletData(overviewQuery.data, providersQuery.data), [overviewQuery.data, providersQuery.data]);
 
   const filteredTransactions = useMemo(
     () =>
@@ -390,10 +398,16 @@ export default function WalletPage() {
     [data?.transactionRows, search, statusFilter, typeFilter],
   );
 
-  const errorMessage = overviewQuery.error ? parseError(overviewQuery.error) : null;
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      const csv = buildCsv(filteredTransactions);
+      downloadBlob(`forge-wallet-activity-${period.toLowerCase()}.csv`, csv, "text/csv;charset=utf-8");
+      return true;
+    },
+  });
 
+  const errorMessage = overviewQuery.error ? parseError(overviewQuery.error) : providersQuery.error ? parseError(providersQuery.error) : null;
   const exportError = exportMutation.error ? parseError(exportMutation.error) : null;
-  const transactionHistoryUnavailable = !transactionHistorySupported;
   const unauthorized = errorMessage?.toLowerCase().includes("401") || errorMessage?.toLowerCase().includes("unauthorized");
   const transactionTypes = Array.from(new Set((data?.transactionRows ?? []).map((row) => row.type)));
   const transactionStatuses = Array.from(new Set((data?.transactionRows ?? []).map((row) => row.status)));
@@ -421,21 +435,8 @@ export default function WalletPage() {
         {exportError ? (
           <SurfaceCard className="border-[#F7C9D1] bg-[#FFF7F8]">
             <div className="p-4 text-[14px] text-[#7A2230]">
-              <p className="font-semibold">Transaction export is not returning successfully yet</p>
+              <p className="font-semibold">Wallet export failed</p>
               <p className="mt-1">{exportError}</p>
-            </div>
-          </SurfaceCard>
-        ) : null}
-
-        {transactionHistoryUnavailable ? (
-          <SurfaceCard className="border-[#F2D172] bg-[#FFF9E7]">
-            <div className="p-4 text-[14px] text-[#8A5B12]">
-              <p className="font-semibold">Transaction history is not available on the current staging contract.</p>
-              <p className="mt-1">
-                The wallet overview endpoint is live, but the transaction-history route exposed in the earlier collection
-                does not resolve on this environment yet. The rest of the page stays usable with honest empty-state
-                messaging.
-              </p>
             </div>
           </SurfaceCard>
         ) : null}
@@ -459,8 +460,8 @@ export default function WalletPage() {
         <div className="grid gap-4 xl:grid-cols-2">
           <SurfaceCard>
             <div className="p-4">
-              <p className="text-[13px] font-semibold uppercase text-[#16181D]">Volume breakdown</p>
-              <p className="mt-2 text-[13px] text-[#7A7F89]">Mapped from the wallet overview endpoint</p>
+              <p className="text-[13px] font-semibold uppercase text-[#16181D]">Operational breakdown</p>
+              <p className="mt-2 text-[13px] text-[#7A7F89]">Mapped from the admin wallet overview response</p>
               <div className="mt-6 space-y-6">
                 {(data?.breakdownRows ?? []).map((row) => (
                   <div key={row.label} className="flex items-center justify-between gap-4 text-[14px]">
@@ -475,7 +476,7 @@ export default function WalletPage() {
           <SurfaceCard>
             <div className="p-4">
               <p className="text-[13px] font-semibold uppercase text-[#16181D]">Geographic distribution</p>
-              <p className="mt-2 text-[13px] text-[#7A7F89]">Rendered only from locations exposed by the current backend payload</p>
+              <p className="mt-2 text-[13px] text-[#7A7F89]">Using sender geography first, then recipient geography when sender data is empty</p>
               <div className="mt-6 grid grid-cols-[minmax(0,1fr)_100px_90px] border-b border-[#ECEEF2] pb-3 text-[12px] font-semibold uppercase text-[#7A7F89]">
                 <div>Region</div>
                 <div>Volume</div>
@@ -509,13 +510,13 @@ export default function WalletPage() {
           <SurfaceCard>
             <div className="p-4">
               <p className="text-[13px] font-semibold uppercase text-[#16181D]">Card and provider coverage</p>
-              <p className="mt-2 text-[13px] text-[#7A7F89]">The current wallet endpoints do not expose the full card issuance summary from the design</p>
+              <p className="mt-2 text-[13px] text-[#7A7F89]">These counters are now based on the admin wallet overview and provider list endpoints</p>
               <div className="mt-5 grid gap-3 md:grid-cols-2">
                 {[
-                  ["Live transaction history", filteredTransactions.length > 0 ? String(filteredTransactions.length) : "0", "#16181D"],
-                  ["Overview fields mapped", data ? "Yes" : "No", "#228473"],
-                  ["Card issuance summary", "Missing", "#D97706"],
-                  ["Provider health detail", "Partial", "#767C86"],
+                  ["Recent transactions", filteredTransactions.length > 0 ? String(filteredTransactions.length) : "0", "#16181D"],
+                  ["Providers returned", data ? String(data.providerRows.length) : "0", "#228473"],
+                  ["Synced cards", data ? String((data.breakdownRows.find((row) => row.label === "Synced cards")?.value ?? "0")) : "0", "#3150FF"],
+                  ["Wallet failures", data ? String((data.breakdownRows.find((row) => row.label === "Wallet creation failures")?.value ?? "0")) : "0", "#D97706"],
                 ].map(([value, label, color]) => (
                   <div key={label} className="rounded-[16px] border border-[#E6E7EC] p-4 text-center">
                     <p className="text-[33px] font-semibold" style={{ color: color as string }}>
@@ -530,8 +531,8 @@ export default function WalletPage() {
 
           <SurfaceCard>
             <div className="p-4">
-              <p className="text-[13px] font-semibold uppercase text-[#16181D]">Card transaction volume</p>
-              <p className="mt-2 text-[13px] text-[#7A7F89]">This panel is currently derived from transaction history because a dedicated card-volume endpoint was not confirmed</p>
+              <p className="text-[13px] font-semibold uppercase text-[#16181D]">Recent transaction mix</p>
+              <p className="mt-2 text-[13px] text-[#7A7F89]">Built from the live recent transactions bundled into the admin wallet overview</p>
               <div className="mt-6 space-y-6">
                 {[
                   ["Total rows loaded", String(filteredTransactions.length)],
@@ -553,7 +554,7 @@ export default function WalletPage() {
 
         <SurfaceCard className="overflow-hidden">
           <div className="flex flex-wrap items-center gap-4 p-4">
-            <ToolbarSearchField placeholder="Search by user ID..." value={search} onChange={setSearch} />
+            <ToolbarSearchField placeholder="Search by user ID or reference..." value={search} onChange={setSearch} />
             <ToolbarSelect value={typeFilter} onChange={setTypeFilter} options={["Type", ...transactionTypes]} />
             <ToolbarSelect value={statusFilter} onChange={setStatusFilter} options={["Status", ...transactionStatuses]} />
           </div>
@@ -603,7 +604,7 @@ export default function WalletPage() {
           ))}
           {filteredTransactions.length === 0 ? (
             <div className="px-[18px] py-10 text-center text-[14px] text-[#6F7480]">
-              No transaction rows matched the current backend response and filters.
+              No recent transaction rows matched the current backend response and filters.
             </div>
           ) : null}
         </SurfaceCard>
@@ -613,9 +614,14 @@ export default function WalletPage() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-[13px] font-semibold uppercase text-[#16181D]">Provider status</p>
-                <p className="mt-2 text-[13px] text-[#7A7F89]">Rendered from confirmed wallet coverage, with explicit gaps where provider-level health is missing</p>
+                <p className="mt-2 text-[13px] text-[#7A7F89]">Rendered from the admin wallet providers endpoint and provider counts in the overview</p>
               </div>
-              <ExportButton onClick={() => { void overviewQuery.refetch(); void transactionsQuery.refetch(); }}>
+              <ExportButton
+                onClick={() => {
+                  void overviewQuery.refetch();
+                  void providersQuery.refetch();
+                }}
+              >
                 <RefreshCw className="h-4 w-4" />
                 Refresh
               </ExportButton>
