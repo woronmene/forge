@@ -644,14 +644,34 @@ export default function UploadPage() {
     beginProgress(progressKey, onProgress);
 
     try {
-      const response = await fetch("/api/forge/upload-file", {
-        method: "POST",
-        body: formData,
-      });
+      await new Promise<void>((resolve, reject) => {
+        const request = new XMLHttpRequest();
+        request.open("POST", uploadTarget.uploadUrl);
 
-      if (!response.ok) {
-        throw new Error(`Upload failed with status ${response.status}.`);
-      }
+        request.upload.onprogress = (event) => {
+          if (!event.lengthComputable) {
+            return;
+          }
+
+          const percent = Math.max(8, Math.min(100, Math.round((event.loaded / event.total) * 100)));
+          onProgress(percent);
+        };
+
+        request.onerror = () => {
+          reject(new Error("Upload failed before reaching storage."));
+        };
+
+        request.onload = () => {
+          if (request.status >= 200 && request.status < 300) {
+            resolve();
+            return;
+          }
+
+          reject(new Error(`Upload failed with status ${request.status}.`));
+        };
+
+        request.send(formData);
+      });
 
       onProgress(100);
       return uploadTarget;
